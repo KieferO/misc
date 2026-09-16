@@ -1,0 +1,682 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+import sys
+import hashlib
+import getpass
+import base64
+import string
+import readline
+import os
+import argparse
+import fnmatch
+import subprocess
+
+import whirlpool
+
+def inner_ascii85(inbytes):
+    val = sum([ v * 256 ** i for v, i in zip(inbytes, range(3, -1, -1)) ])
+    charset = string.digits + string.ascii_letters + string.punctuation
+    outli = []
+    for i in range(5):
+        outli.append(charset[val % 85])
+        val //= 85
+    return ''.join(outli)
+
+def ascii85(inbytes):
+    outli = []
+    for i in range(0, len(inbytes), 4):
+        outli.append(inner_ascii85(inbytes[i:i+4]))
+    return ''.join(outli)[:12]
+
+class rhWP():
+    def __init__(self):
+        self.rhash = subprocess.Popen(
+                ['rhash', '-W', '-'], # Args
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+        )
+
+    def update(self, instr):
+        self.rhash.stdin.write(instr)
+
+    def hexdigest(self):
+        outs, errs = self.rhash.communicate()
+        return outs.partition(b' ')[0]
+
+    def digest(self):
+        return bytes.fromhex(self.hexdigest().decode('us-ascii'))
+
+def get_hashpass(mpass, url, ofun, sequence):
+    #m = hashlib.new('whirlpool')
+    m = whirlpool.new()
+    m = rhWP()
+    for i in range(abs(sequence + 1)):
+        #m.update(getpass.getuser().encode('utf-8'))
+        m.update(b'khicks')
+        m.update(url)
+        m.update(mpass)
+    passwd = m.digest()
+    return ofun(passwd)
+
+def ascii64(inbytes):
+    return base64.b64encode(inbytes, b'AB').decode()[:12]
+
+def hexify(inbytes):
+    outchars = []
+    for by in inbytes:
+        hny = by // 16
+        lny = by % 16
+        outchars.extend([ '0123456789abcdef'[ny] for ny in [hny, lny] ])
+    return ''.join(outchars)
+
+def bytes2giantnumber(inbytes):
+    n = 0
+    for by in reversed(inbytes):
+        n <<= 8
+        n += int(by)
+    return n
+
+def ascii10(inbytes):
+    n = bytes2giantnumber(inbytes)
+    digits = str(n)
+    groups = []
+    for i in range(3):
+        groups.append(digits[i * 5:(i + 1) * 5])
+    return '-'.join(groups)
+
+def easyType(inbytes):
+    n = bytes2giantnumber(inbytes)
+    outpass = []
+    base_chars = '0123456789abcdefghijklmnopqrstuvwxyz'
+    syms = ')!@#$%^&*('
+    caps = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+    sym_idx = n % 16
+    n //= 16
+    cap_idx = n % 15
+    n //= 15
+    if cap_idx >= sym_idx:
+        cap_idx += 1
+    for i in range(16):
+        if i == sym_idx:
+            outpass.append(syms[n % len(syms)])
+            n //= len(syms)
+        elif i == cap_idx:
+            outpass.append(caps[n % len(caps)])
+            n //= len(caps)
+        else:
+            outpass.append(base_chars[n % len(base_chars)])
+            n //= len(base_chars)
+    return ''.join(outpass)
+
+def phrase(inbytes):
+    wordlist = (
+        ("aardvark", "adroitness"),
+        ("absurd", "adviser"),
+        ("accrue", "aftermath"),
+        ("acme", "aggregate"),
+        ("adrift", "alkali"),
+        ("adult", "almighty"),
+        ("afflict", "amulet"),
+        ("ahead", "amusement"),
+        ("aimless", "antenna"),
+        ("Algol", "applicant"),
+        ("allow", "Apollo"),
+        ("alone", "armistice"),
+        ("ammo", "article"),
+        ("ancient", "asteroid"),
+        ("apple", "Atlantic"),
+        ("artist", "atmosphere"),
+        ("assume", "autopsy"),
+        ("Athens", "Babylon"),
+        ("atlas", "backwater"),
+        ("Aztec", "barbecue"),
+        ("baboon", "belowground"),
+        ("backfield", "bifocals"),
+        ("backward", "bodyguard"),
+        ("banjo", "bookseller"),
+        ("beaming", "borderline"),
+        ("bedlamp", "bottomless"),
+        ("beehive", "Bradbury"),
+        ("beeswax", "bravado"),
+        ("befriend", "Brazilian"),
+        ("Belfast", "breakaway"),
+        ("berserk", "Burlington"),
+        ("billiard", "businessman"),
+        ("bison", "butterfat"),
+        ("blackjack", "Camelot"),
+        ("blockade", "candidate"),
+        ("blowtorch", "cannonball"),
+        ("bluebird", "Capricorn"),
+        ("bombast", "caravan"),
+        ("bookshelf", "caretaker"),
+        ("brackish", "celebrate"),
+        ("breadline", "cellulose"),
+        ("breakup", "certify"),
+        ("brickyard", "chambermaid"),
+        ("briefcase", "Cherokee"),
+        ("Burbank", "Chicago"),
+        ("button", "clergyman"),
+        ("buzzard", "coherence"),
+        ("cement", "combustion"),
+        ("chairlift", "commando"),
+        ("chatter", "company"),
+        ("checkup", "component"),
+        ("chisel", "concurrent"),
+        ("choking", "confidence"),
+        ("chopper", "conformist"),
+        ("Christmas", "congregate"),
+        ("clamshell", "consensus"),
+        ("classic", "consulting"),
+        ("classroom", "corporate"),
+        ("cleanup", "corrosion"),
+        ("clockwork", "councilman"),
+        ("cobra", "crossover"),
+        ("commence", "crucifix"),
+        ("concert", "cumbersome"),
+        ("cowbell", "customer"),
+        ("crackdown", "Dakota"),
+        ("cranky", "decadence"),
+        ("crowfoot", "December"),
+        ("crucial", "decimal"),
+        ("crumpled", "designing"),
+        ("crusade", "detector"),
+        ("cubic", "detergent"),
+        ("dashboard", "determine"),
+        ("deadbolt", "dictator"),
+        ("deckhand", "dinosaur"),
+        ("dogsled", "direction"),
+        ("dragnet", "disable"),
+        ("drainage", "disbelief"),
+        ("dreadful", "disruptive"),
+        ("drifter", "distortion"),
+        ("dropper", "document"),
+        ("drumbeat", "embezzle"),
+        ("drunken", "enchanting"),
+        ("Dupont", "enrollment"),
+        ("dwelling", "enterprise"),
+        ("eating", "equation"),
+        ("edict", "equipment"),
+        ("egghead", "escapade"),
+        ("eightball", "Eskimo"),
+        ("endorse", "everyday"),
+        ("endow", "examine"),
+        ("enlist", "existence"),
+        ("erase", "exodus"),
+        ("escape", "fascinate"),
+        ("exceed", "filament"),
+        ("eyeglass", "finicky"),
+        ("eyetooth", "forever"),
+        ("facial", "fortitude"),
+        ("fallout", "frequency"),
+        ("flagpole", "gadgetry"),
+        ("flatfoot", "Galveston"),
+        ("flytrap", "getaway"),
+        ("fracture", "glossary"),
+        ("framework", "gossamer"),
+        ("freedom", "graduate"),
+        ("frighten", "gravity"),
+        ("gazelle", "guitarist"),
+        ("Geiger", "hamburger"),
+        ("glitter", "Hamilton"),
+        ("glucose", "handiwork"),
+        ("goggles", "hazardous"),
+        ("goldfish", "headwaters"),
+        ("gremlin", "hemisphere"),
+        ("guidance", "hesitate"),
+        ("hamlet", "hideaway"),
+        ("highchair", "holiness"),
+        ("hockey", "hurricane"),
+        ("indoors", "hydraulic"),
+        ("indulge", "impartial"),
+        ("inverse", "impetus"),
+        ("involve", "inception"),
+        ("island", "indigo"),
+        ("jawbone", "inertia"),
+        ("keyboard", "infancy"),
+        ("kickoff", "inferno"),
+        ("kiwi", "informant"),
+        ("klaxon", "insincere"),
+        ("locale", "insurgent"),
+        ("lockup", "integrate"),
+        ("merit", "intention"),
+        ("minnow", "inventive"),
+        ("miser", "Istanbul"),
+        ("Mohawk", "Jamaica"),
+        ("mural", "Jupiter"),
+        ("music", "leprosy"),
+        ("necklace", "letterhead"),
+        ("Neptune", "liberty"),
+        ("newborn", "maritime"),
+        ("nightbird", "matchmaker"),
+        ("Oakland", "maverick"),
+        ("obtuse", "Medusa"),
+        ("offload", "megaton"),
+        ("optic", "microscope"),
+        ("orca", "microwave"),
+        ("payday", "midsummer"),
+        ("peachy", "millionaire"),
+        ("pheasant", "miracle"),
+        ("physique", "misnomer"),
+        ("playhouse", "molasses"),
+        ("Pluto", "molecule"),
+        ("preclude", "Montana"),
+        ("prefer", "monument"),
+        ("preshrunk", "mosquito"),
+        ("printer", "narrative"),
+        ("prowler", "nebula"),
+        ("pupil", "newsletter"),
+        ("puppy", "Norwegian"),
+        ("python", "October"),
+        ("quadrant", "Ohio"),
+        ("quiver", "onlooker"),
+        ("quota", "opulent"),
+        ("ragtime", "Orlando"),
+        ("ratchet", "outfielder"),
+        ("rebirth", "Pacific"),
+        ("reform", "pandemic"),
+        ("regain", "Pandora"),
+        ("reindeer", "paperweight"),
+        ("rematch", "paragon"),
+        ("repay", "paragraph"),
+        ("retouch", "paramount"),
+        ("revenge", "passenger"),
+        ("reward", "pedigree"),
+        ("rhythm", "Pegasus"),
+        ("ribcage", "penetrate"),
+        ("ringbolt", "perceptive"),
+        ("robust", "performance"),
+        ("rocker", "pharmacy"),
+        ("ruffled", "phonetic"),
+        ("sailboat", "photograph"),
+        ("sawdust", "pioneer"),
+        ("scallion", "pocketful"),
+        ("scenic", "politeness"),
+        ("scorecard", "positive"),
+        ("Scotland", "potato"),
+        ("seabird", "processor"),
+        ("select", "provincial"),
+        ("sentence", "proximate"),
+        ("shadow", "puberty"),
+        ("shamrock", "publisher"),
+        ("showgirl", "pyramid"),
+        ("skullcap", "quantity"),
+        ("skydive", "racketeer"),
+        ("slingshot", "rebellion"),
+        ("slowdown", "recipe"),
+        ("snapline", "recover"),
+        ("snapshot", "repellent"),
+        ("snowcap", "replica"),
+        ("snowslide", "reproduce"),
+        ("solo", "resistor"),
+        ("southward", "responsive"),
+        ("soybean", "retraction"),
+        ("spaniel", "retrieval"),
+        ("spearhead", "retrospect"),
+        ("spellbind", "revenue"),
+        ("spheroid", "revival"),
+        ("spigot", "revolver"),
+        ("spindle", "sandalwood"),
+        ("spyglass", "sardonic"),
+        ("stagehand", "Saturday"),
+        ("stagnate", "savagery"),
+        ("stairway", "scavenger"),
+        ("standard", "sensation"),
+        ("stapler", "sociable"),
+        ("steamship", "souvenir"),
+        ("sterling", "specialist"),
+        ("stockman", "speculate"),
+        ("stopwatch", "stethoscope"),
+        ("stormy", "stupendous"),
+        ("sugar", "supportive"),
+        ("surmount", "surrender"),
+        ("suspense", "suspicious"),
+        ("sweatband", "sympathy"),
+        ("swelter", "tambourine"),
+        ("tactics", "telephone"),
+        ("talon", "therapist"),
+        ("tapeworm", "tobacco"),
+        ("tempest", "tolerance"),
+        ("tiger", "tomorrow"),
+        ("tissue", "torpedo"),
+        ("tonic", "tradition"),
+        ("topmost", "travesty"),
+        ("tracker", "trombonist"),
+        ("transit", "truncated"),
+        ("trauma", "typewriter"),
+        ("treadmill", "ultimate"),
+        ("Trojan", "undaunted"),
+        ("trouble", "underfoot"),
+        ("tumor", "unicorn"),
+        ("tunnel", "unify"),
+        ("tycoon", "universe"),
+        ("uncut", "unravel"),
+        ("unearth", "upcoming"),
+        ("unwind", "vacancy"),
+        ("uproot", "vagabond"),
+        ("upset", "vertigo"),
+        ("upshot", "Virginia"),
+        ("vapor", "visitor"),
+        ("village", "vocalist"),
+        ("virus", "voyager"),
+        ("Vulcan", "warranty"),
+        ("waffle", "Waterloo"),
+        ("wallet", "whimsical"),
+        ("watchword", "Wichita"),
+        ("wayside", "Wilmington"),
+        ("willow", "Wyoming"),
+        ("woodlark", "yesteryear"),
+        ("Zulu", "Yucatán")
+    )
+    outwords = []
+    for i in range(10):
+        outwords.append(wordlist[int(inbytes[i])][i%2])
+    return ' '.join(outwords)
+
+def check(mpass):
+    pass2 = getpass.getpass('Enter password again to confirm: ').encode('utf-8')
+    if pass2 != mpass:
+        raise ValueError('Passwords do not match.')
+    return pass2
+
+class Account:
+    def __init__(self, name, url, user, output, sequence):
+        self.name = name
+        self.url = url.encode('utf-8')
+        self.user = user
+        self.output = output
+        self.sequence = sequence
+
+    def get_pass(self, mpass):
+        flavours = {}
+        flavours['Base85'] = ascii85
+        flavours['Base64'] = ascii64
+        flavours['RAW'] = hexify
+        flavours['Base10'] = ascii10
+        flavours['EasyType'] = easyType
+        flavours['XKCDPass'] = phrase
+        outpass = self.output
+        for flavour in flavours:
+            if flavour in outpass:
+                password = get_hashpass(
+                    mpass, self.url, flavours[flavour], self.sequence
+                )
+                outpass = outpass.replace(flavour, password)
+        return outpass
+
+    def __repr__(self):
+        return 'Account(name=%s, url=%s, user=%s, output=%s, sequence=%d)' % \
+                (self.name, self.url, self.user, self.output, self.sequence)
+
+    def __str__(self):
+        fmt_parts = ['%(name)s']
+        fmt_parts.append('\tUrl: %s' % self.url.decode('utf-8'))
+        if '@' in self.user: 
+            fmt_parts.append('\tEmail: %(user)s')
+        else:
+            fmt_parts.append('\tUsername: %(user)s')
+        fmt_parts.append('\tOutput: %(output)s')
+        if self.sequence:
+            fmt_parts.append('\tSequence: %(sequence)s')
+        return '\n'.join(fmt_parts) % self.__dict__
+
+    def dump(self, mpass):
+        return str(self) + '\n\tPassword: ' + self.get_pass(mpass)
+
+def whirlpoolhex(indata):
+    #m = hashlib.new('whirlpool')
+    m = whirlpool.new()
+    m.update(indata)
+    return m.hexdigest()
+
+class AccountsStore:
+    def __init__(self, fn):
+        self.configfn = fn
+        with open(self.configfn) as f:
+            self.mpasshash = f.readline().strip()
+            self.accounts = []
+            name, user, url, output = ('',) * 4
+            sequence = 0
+            for line in f:
+                line = line.strip()
+                if not line:
+                    new_a = Account(name, url, user, output, sequence)
+                    self.accounts.append(new_a)
+                    name, user, url, output = ('',) * 4
+                    sequence = 0
+                if not ':' in line:
+                    name = line
+                else:
+                    before, delim, after = line.partition(':')
+                    after = after.strip()
+                    if before in ('User', 'Username', 'Email'):
+                        user = after
+                    if before == 'URL':
+                        url = after
+                    if before == 'Output':
+                        output = after
+                    if before == 'Sequence':
+                        sequence = int(after)
+        self.name_acc = {}
+        for account in self.accounts:
+            self.name_acc[account.name] = account
+
+    def complete(self, text, state):
+        all_accs = []
+        if not text: all_accs.append('ls')
+        for name in self.name_acc:
+            if name.startswith(text): all_accs.append(name)
+        if state > len(all_accs):
+            return None
+        else:
+            return all_accs[state]
+
+    def __str__(self):
+        return '\n\n'.join([ str(a) for a in self.accounts ])
+
+    def dump(self, mpass):
+        return '\n\n'.join([ a.dump(mpass) for a in self.accounts ])
+
+def get_args():
+    ap = argparse.ArgumentParser()
+    ap.add_argument(
+        '--ignore-preset',
+        help='Accept whatever is entered as the master password without '
+        'prompting for confirmation nor checking against the hash stored '
+        'in the accounts file.',
+        action='store_false',
+        dest='check_mpass'
+    )
+    ap.add_argument(
+        '--one-shot',
+        help='If not present as arguments, prompt for --url and --output, '
+        'yield one password, and exit.',
+        action='store_true'
+    )
+    ap.add_argument(
+        '--url',
+        help='The URL of the site which requests a password.  Implies '
+        '--one-shot.  The URL should include any subdomains, but not the '
+        'protocol, i.e. www.google.com, not https://www.google.com/ or '
+        'google.com'
+    )
+    ap.add_argument(
+        '--output',
+        metavar='FLAVOUR',
+        help='Specify the output flavour of the password.  Usually just Base85 '
+        '(which contains special characters) or Base64 (which contains only '
+        'alphanumerics), but can include other characters to satisfy password '
+        'complexity requirements.  Implies --one-shot.',
+    )
+    ap.add_argument(
+        '--save',
+        help='Implies --one-shot.  Additionally prompts for --username and '
+        '--name if not '
+        'present, and saves the resulting account specification to the '
+        'accounts file.',
+        action='store_true'
+    )
+    ap.add_argument(
+        '--accounts-file',
+        metavar='FILE',
+        help='Use FILE as the accounts file rather than $HOME/.accounts.',
+        dest='configfn',
+        default=os.path.join(os.path.expanduser('~'), '.accounts')
+    )
+    ap.add_argument(
+        '--username',
+        help='Specify the username for the account.  This does not affect the '
+        'generated password.  Implies --one-shot and --save.'
+    )
+    ap.add_argument(
+        '--name',
+        help='Specify a descriptive name for the account.  This will be '
+        'written to the accounts file and used for later lookups. implies '
+        '--one-shot and --save.',
+    )
+    ap.add_argument(
+        '--dump',
+        help='Write out the name, url, username, and password of every account '
+        'in the accounts file and exit.',
+        action='store_true'
+    )
+    ap.add_argument(
+        '--list',
+        action='store_true',
+        help='Do no prompt for a password; write out the name of every '
+        'account'
+    )
+    ap.add_argument(
+        '--no-loop',
+        action='store_false',
+        help='Quit after writing out the first password.'
+    )
+    ap.add_argument(
+        '--lookup',
+        help='Look up a single password and print it to stdout.'
+    )
+    ap.add_argument(
+        '--mpass-file',
+        type=argparse.FileType('r'),
+        help='Read the master password from the given file rather than '
+        'prompting for it.  WARNING: Do not use unless you know what you '
+        'are doing.  Leaving files with passwords in them arround is '
+        'inherently insecure.'
+    )
+    args = ap.parse_args()
+    if args.username or args.name:
+        args.save = True
+    if args.save or args.output or args.url:
+        args.one_shot = True
+    if args.list or args.mpass_file:
+        args.check_mpass = False
+    return args
+
+def get_or_set_mpass(AS, mpass):
+    while whirlpoolhex(mpass) != AS.mpasshash:
+        print('Warning! Entered password does not match saved password.')
+        prompt = 'Would you like to set it?[yes/No]'
+        if prompt == 'yes':
+            check(mpass)
+            print('Old password hash was: %s' % AS.mpasshash)
+            with open(AS.configfn, 'r') as old, open(AS.configfn+'.tmp', 'w') as new:
+                old.readline()
+                new.write('%s\n' % whirlpoolhex(mpass))
+                for line in old:
+                    new.write(line)
+            os.rename(AS.configfn+'.tmp', AS.configfn)
+        else:
+            mpass = getpass.getpass('Enter master passowrd: ').encode('utf-8')
+    return mpass
+
+def lookup_loop(AS, mpass, forever=True):
+    while True:
+        try:
+            command = input('> ')
+        except EOFError:
+            sys.stdout.write('\n')
+            return 0
+        except KeyboardInterrupt:
+            sys.stdout.write('^C\n')
+            continue
+        command = command.rstrip(' ')
+        if command == 'ls':
+            print('\n'.join(sorted(AS.name_acc.keys())))
+        if command in AS.name_acc:
+            account = AS.name_acc[command]
+            print('Username: %s' % account.user)
+            print('Password: %s' % account.get_pass(mpass))
+            if not forever:
+                return 0
+        if set(command) & set('*[]?'):
+            filtered = fnmatch.filter(AS.name_acc.keys(), command)
+            if len(filtered) > 1:
+                for f in filtered:
+                    print(f)
+            if len(filtered) == 1:
+                account = AS.name_acc[filtered[0]]
+                print('Username: %s' % account.user)
+                print('Password: %s' % account.get_pass(mpass))
+                if not forever:
+                    return 0
+
+def main():
+    args = get_args()
+    AS = AccountsStore(args.configfn)
+    readline.set_completer_delims('\t\n')
+    readline.set_completer(AS.complete)
+    mpass = None
+    if args.mpass_file:
+        mpass = args.mpass_file.read()
+        if mpass and mpass[-1] == '\n':
+            mpass = mpass[:-1]
+        mpass = mpass.encode('utf-8')
+    if args.list:
+        for account in AS.accounts:
+            print(account.name)
+        return 0
+    if mpass is None:
+        try:
+            mpass = getpass.getpass('Enter master passowrd: ').encode('utf-8')
+        except (EOFError, KeyboardInterrupt):
+            sys.stdout.write('\nOperation cancelled. Exiting.\n')
+            return 1
+    if args.check_mpass:
+        mpass = get_or_set_mpass(AS, mpass)
+    if args.dump:
+        print(AS.dump(mpass))
+        return 0
+    if args.lookup:
+        if args.lookup not in AS.name_acc:
+            print('Account `%s\' not found in accounts file.' % args.lookup,
+                  file=sys.stderr)
+            return 1
+        print(AS.name_acc[args.lookup].get_pass(mpass))
+        return 0
+    if args.one_shot:
+        if not args.url:
+            args.url          = input('URL     : ')
+        if not args.output: 
+            args.output       = input('Output  : ')
+        if args.save:
+            if not args.name:
+                args.name     = input('Name    : ')
+            if not args.username:
+                args.username = input('Username: ')
+            with open(args.configfn, 'a') as accountf:
+                accountf.write('%s\n' % args.name)
+                accountf.write('\tURL: %s\n' % args.url)
+                if '@' in args.username and '.' in args.username:
+                    accountf.write('\tEmail: %s\n' % args.username)
+                else:
+                    accountf.write('\tUsername: %s\n' % args.username)
+                accountf.write('\tOutput: %s\n' % args.output)
+                accountf.write('\n')
+        account = Account(args.name, args.url, args.username, args.output, 0)
+        print('Username: %s' % account.user)
+        print('Password: %s' % account.get_pass(mpass))
+    else:
+        return lookup_loop(AS, mpass, args.no_loop)
+
+if __name__ == '__main__':
+    sys.exit(main())

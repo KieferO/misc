@@ -1,0 +1,14 @@
+#!/usr/bin/env python3
+
+import sys
+import os
+
+def main():
+    for i, line in enumerate(sys.stdin, start=1):
+        numstr = '%0.2d' % i
+        os.rename('track' + numstr + '.cdda.wav',
+                  numstr + ' - ' + line.strip() + '.wav')
+    return 0
+
+if __name__ == '__main__':
+    sys.exit(main())

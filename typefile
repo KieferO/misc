@@ -1,0 +1,23 @@
+#!/usr/bin/env python3
+
+import sys
+import subprocess
+
+def main():
+    subs = {
+        '-': 'minus',
+        '+': 'plus',
+        '/': 'slash',
+        '\n': 'Return',
+        ' ': 'space',
+    }
+    for line in sys.stdin:
+        chrs = list(line)
+        chrs = [ (subs[x] if x in subs else x) for x in chrs ]
+        subprocess.run(
+            ['xdotool', 'key'] + chrs
+        )
+    return 0
+
+if __name__ == '__main__':
+    sys.exit(main())

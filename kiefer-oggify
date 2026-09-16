@@ -1,0 +1,9 @@
+#!/bin/bash
+
+artist=$(basename "$(dirname "$(pwd)")")
+album=$(basename "$(pwd)")
+tracknum=$(echo $@ | cut -d' ' -f 1)
+title=$(echo $@ | cut -d' ' -f 3- | rev | cut -d'.' -f 2- | rev)
+oggenc -q 7 -a "$artist" -l "$album" -N "$tracknum" -t "$title" "$@"
+exit
+
